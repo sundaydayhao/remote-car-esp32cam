@@ -1,10 +1,10 @@
-# ESP32-S3 smart camera car defaults
+# AI-Thinker ESP32-CAM smart camera car defaults
 
-CONFIG_IDF_TARGET="esp32s3"
+CONFIG_IDF_TARGET="esp32"
 
-# Camera frame buffers need PSRAM on normal ESP32-S3 camera builds.
+# Camera frame buffers need PSRAM on ESP32-CAM camera builds.
 CONFIG_SPIRAM=y
-CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_MODE_QUAD=y
 CONFIG_SPIRAM_SPEED_80M=y
 CONFIG_SPIRAM_USE_MALLOC=y
 CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL=16384
@@ -26,8 +26,8 @@ CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=240
 
-# Typical S3 camera boards use at least 8 MB flash.
-CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+# Typical AI-Thinker ESP32-CAM boards use 4 MB flash.
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
 
 # Leave room for the web UI and camera stack.
 CONFIG_PARTITION_TABLE_CUSTOM=y
