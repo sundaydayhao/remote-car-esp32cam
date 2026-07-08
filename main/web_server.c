@@ -11,8 +11,10 @@
 
 #include "audio_intercom.h"
 #include "camera_app.h"
+#include "control_protocol.h"
 #include "motor_control.h"
 #include "ultrasonic.h"
+#include "wifi_ap.h"
 
 static const char *TAG = "web";
 
@@ -116,6 +118,34 @@ static uint8_t parse_speed(const char *value)
     return (uint8_t)speed;
 }
 
+static uint32_t parse_u32(const char *value)
+{
+    if (value == NULL || value[0] == '\0') {
+        return 0;
+    }
+
+    return (uint32_t)strtoul(value, NULL, 10);
+}
+
+static void normalize_client_id(char *value)
+{
+    if (value == NULL || value[0] == '\0') {
+        strlcpy(value, "anonymous", CAR_CONTROL_CLIENT_ID_MAX_LEN + 1);
+        return;
+    }
+
+    value[CAR_CONTROL_CLIENT_ID_MAX_LEN] = '\0';
+    for (char *p = value; *p != '\0'; p++) {
+        bool ok = (*p >= '0' && *p <= '9') ||
+                  (*p >= 'a' && *p <= 'z') ||
+                  (*p >= 'A' && *p <= 'Z') ||
+                  *p == '-' || *p == '_' || *p == '.' || *p == ':';
+        if (!ok) {
+            *p = '_';
+        }
+    }
+}
+
 static int hex_value(char c)
 {
     if (c >= '0' && c <= '9') {
@@ -206,34 +236,49 @@ static car_motion_t motion_from_voice_text(const char *text, bool *recognized)
 
 static esp_err_t control_handler(httpd_req_t *req)
 {
-    char query[128] = {0};
+    char query[192] = {0};
     char cmd[32] = "stop";
     char speed_value[8] = {0};
+    char seq_value[16] = {0};
+    char source_value[16] = "web";
+    char client_id[CAR_CONTROL_CLIENT_ID_MAX_LEN + 1] = "anonymous";
 
     if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
         httpd_query_key_value(query, "cmd", cmd, sizeof(cmd));
         httpd_query_key_value(query, "speed", speed_value, sizeof(speed_value));
+        httpd_query_key_value(query, "seq", seq_value, sizeof(seq_value));
+        httpd_query_key_value(query, "source", source_value, sizeof(source_value));
+        httpd_query_key_value(query, "client", client_id, sizeof(client_id));
     }
+    normalize_client_id(client_id);
 
-    car_motion_t motion = car_motion_from_string(cmd);
-    uint8_t speed = parse_speed(speed_value);
-    esp_err_t drive_ret = motor_control_drive(motion, speed);
+    car_control_message_t message = {
+        .motion = car_motion_from_string(cmd),
+        .speed = parse_speed(speed_value),
+        .seq = parse_u32(seq_value),
+        .source = control_protocol_source_from_string(source_value),
+    };
+    strlcpy(message.client_id, client_id, sizeof(message.client_id));
 
     motor_status_t status = {0};
-    motor_control_get_status(&status);
+    esp_err_t drive_ret = control_protocol_apply(&message, &status);
 
-    char body[256];
+    char body[384];
     int len = snprintf(body, sizeof(body),
                        "{\"ok\":%s,\"cmd\":\"%s\",\"speed\":%u,"
                        "\"left\":%d,\"right\":%d,\"blocked\":%s,"
-                       "\"distance_cm\":%d}\n",
+                       "\"distance_cm\":%d,\"seq\":%lu,"
+                       "\"source\":\"%s\",\"client\":\"%s\"}\n",
                        drive_ret == ESP_OK ? "true" : "false",
                        car_motion_to_string(status.motion),
                        status.speed,
                        status.left_percent,
                        status.right_percent,
                        status.obstacle_blocked ? "true" : "false",
-                       ultrasonic_get_distance_cm());
+                       ultrasonic_get_distance_cm(),
+                       (unsigned long)message.seq,
+                       control_protocol_source_to_string(message.source),
+                       message.client_id);
 
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");
@@ -245,30 +290,42 @@ static esp_err_t voice_handler(httpd_req_t *req)
     char query[256] = {0};
     char text[128] = {0};
     char speed_value[8] = {0};
+    char seq_value[16] = {0};
+    char client_id[CAR_CONTROL_CLIENT_ID_MAX_LEN + 1] = "anonymous";
 
     if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
         httpd_query_key_value(query, "text", text, sizeof(text));
         httpd_query_key_value(query, "speed", speed_value, sizeof(speed_value));
+        httpd_query_key_value(query, "seq", seq_value, sizeof(seq_value));
+        httpd_query_key_value(query, "client", client_id, sizeof(client_id));
     }
     url_decode_in_place(text);
+    normalize_client_id(client_id);
 
     bool recognized = false;
     car_motion_t motion = motion_from_voice_text(text, &recognized);
-    uint8_t speed = parse_speed(speed_value);
     esp_err_t drive_ret = ESP_ERR_NOT_FOUND;
 
+    motor_status_t status = {0};
     if (recognized) {
-        drive_ret = motor_control_drive(motion, speed);
+        car_control_message_t message = {
+            .motion = motion,
+            .speed = parse_speed(speed_value),
+            .seq = parse_u32(seq_value),
+            .source = CAR_CONTROL_SOURCE_VOICE,
+        };
+        strlcpy(message.client_id, client_id, sizeof(message.client_id));
+        drive_ret = control_protocol_apply(&message, &status);
+    } else {
+        motor_control_get_status(&status);
     }
 
-    motor_status_t status = {0};
-    motor_control_get_status(&status);
-
-    char body[320];
+    char body[384];
     int len = snprintf(body, sizeof(body),
                        "{\"ok\":%s,\"recognized\":%s,\"cmd\":\"%s\","
                        "\"speed\":%u,\"left\":%d,\"right\":%d,"
-                       "\"blocked\":%s,\"distance_cm\":%d,\"camera\":%s}\n",
+                       "\"blocked\":%s,\"distance_cm\":%d,\"camera\":%s,"
+                       "\"seq\":%lu,\"source\":\"voice\",\"client\":\"%s\"}\n",
                        (recognized && drive_ret == ESP_OK) ? "true" : "false",
                        recognized ? "true" : "false",
                        recognized ? car_motion_to_string(motion) : car_motion_to_string(status.motion),
@@ -277,7 +334,40 @@ static esp_err_t voice_handler(httpd_req_t *req)
                        status.right_percent,
                        status.obstacle_blocked ? "true" : "false",
                        ultrasonic_get_distance_cm(),
-                       camera_app_is_ready() ? "true" : "false");
+                       camera_app_is_ready() ? "true" : "false",
+                       (unsigned long)parse_u32(seq_value),
+                       client_id);
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_send(req, body, len);
+}
+
+static esp_err_t heartbeat_handler(httpd_req_t *req)
+{
+    char query[128] = {0};
+    char seq_value[16] = {0};
+    char source_value[16] = "web";
+    char client_id[CAR_CONTROL_CLIENT_ID_MAX_LEN + 1] = "anonymous";
+
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
+        httpd_query_key_value(query, "seq", seq_value, sizeof(seq_value));
+        httpd_query_key_value(query, "source", source_value, sizeof(source_value));
+        httpd_query_key_value(query, "client", client_id, sizeof(client_id));
+    }
+    normalize_client_id(client_id);
+
+    car_control_source_t source = control_protocol_source_from_string(source_value);
+    uint32_t seq = parse_u32(seq_value);
+    control_protocol_heartbeat(client_id, source, seq);
+
+    char body[192];
+    int len = snprintf(body, sizeof(body),
+                       "{\"ok\":true,\"seq\":%lu,\"source\":\"%s\","
+                       "\"client\":\"%s\"}\n",
+                       (unsigned long)seq,
+                       control_protocol_source_to_string(source),
+                       client_id);
 
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");
@@ -345,16 +435,36 @@ static esp_err_t status_handler(httpd_req_t *req)
 {
     motor_status_t status = {0};
     motor_control_get_status(&status);
+    car_control_status_t control_status = {0};
+    control_protocol_get_status(&control_status);
+    wifi_ap_status_t wifi_status = {0};
+    wifi_ap_get_status(&wifi_status);
 
     uint32_t uptime_s = (uint32_t)(esp_timer_get_time() / 1000000ULL);
-    uint32_t age_ms = (uint32_t)(esp_timer_get_time() / 1000ULL) - status.last_command_ms;
+    uint32_t now = (uint32_t)(esp_timer_get_time() / 1000ULL);
+    uint32_t age_ms = now - status.last_command_ms;
+    uint32_t heartbeat_age_ms = control_status.last_heartbeat_ms == 0
+                                    ? 0
+                                    : now - control_status.last_heartbeat_ms;
+    uint32_t control_age_ms = control_status.last_control_ms == 0
+                                  ? 0
+                                  : now - control_status.last_control_ms;
 
-    char body[320];
+    char body[768];
     int len = snprintf(body, sizeof(body),
                        "{\"uptime_s\":%lu,\"cmd\":\"%s\",\"speed\":%u,"
                        "\"left\":%d,\"right\":%d,\"blocked\":%s,"
                        "\"distance_cm\":%d,\"camera\":%s,"
-                       "\"last_command_age_ms\":%lu}\n",
+                       "\"audio_ready\":%s,\"audio_client\":%s,"
+                       "\"last_command_age_ms\":%lu,"
+                       "\"control_age_ms\":%lu,\"heartbeat_age_ms\":%lu,"
+                       "\"control_seq\":%lu,\"control_source\":\"%s\","
+                       "\"control_client\":\"%s\","
+                       "\"network\":{\"transport\":\"wifi\",\"mode\":\"%s\","
+                       "\"ssid\":\"%s\",\"channel\":%u,\"station_count\":%u,"
+                       "\"max_station_count\":%u},"
+                       "\"expansion\":{\"cellular_reserved\":true,"
+                       "\"cellular_active\":false}}\n",
                        (unsigned long)uptime_s,
                        car_motion_to_string(status.motion),
                        status.speed,
@@ -363,7 +473,19 @@ static esp_err_t status_handler(httpd_req_t *req)
                        status.obstacle_blocked ? "true" : "false",
                        ultrasonic_get_distance_cm(),
                        camera_app_is_ready() ? "true" : "false",
-                       (unsigned long)age_ms);
+                       audio_intercom_is_ready() ? "true" : "false",
+                       audio_intercom_has_client() ? "true" : "false",
+                       (unsigned long)age_ms,
+                       (unsigned long)control_age_ms,
+                       (unsigned long)heartbeat_age_ms,
+                       (unsigned long)control_status.last_seq,
+                       control_protocol_source_to_string(control_status.last_source),
+                       control_status.last_client_id,
+                       wifi_status.mode,
+                       wifi_status.ssid,
+                       wifi_status.channel,
+                       wifi_status.station_count,
+                       wifi_status.max_station_count);
 
     httpd_resp_set_type(req, "application/json");
     httpd_resp_set_hdr(req, "Cache-Control", "no-store");
@@ -375,7 +497,7 @@ esp_err_t web_server_start(void)
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 80;
     config.stack_size = 8192;
-    config.max_uri_handlers = 9;
+    config.max_uri_handlers = 10;
     config.lru_purge_enable = true;
     config.recv_wait_timeout = 5;
     config.send_wait_timeout = 5;
@@ -416,6 +538,11 @@ esp_err_t web_server_start(void)
         .method = HTTP_GET,
         .handler = voice_handler,
     };
+    const httpd_uri_t uri_heartbeat = {
+        .uri = "/heartbeat",
+        .method = HTTP_GET,
+        .handler = heartbeat_handler,
+    };
 #if CONFIG_HTTPD_WS_SUPPORT && CONFIG_CAR_ENABLE_INTERCOM
     const httpd_uri_t uri_audio = {
         .uri = "/audio",
@@ -431,6 +558,7 @@ esp_err_t web_server_start(void)
     ESP_ERROR_CHECK(httpd_register_uri_handler(s_server, &uri_control));
     ESP_ERROR_CHECK(httpd_register_uri_handler(s_server, &uri_status));
     ESP_ERROR_CHECK(httpd_register_uri_handler(s_server, &uri_voice));
+    ESP_ERROR_CHECK(httpd_register_uri_handler(s_server, &uri_heartbeat));
 #if CONFIG_HTTPD_WS_SUPPORT && CONFIG_CAR_ENABLE_INTERCOM
     ESP_ERROR_CHECK(httpd_register_uri_handler(s_server, &uri_audio));
 #endif

@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ESP32-S3 Smart Car</title>
+  <title>ESP32CAM Wi-Fi Smart Car</title>
   <style>
     :root {
       color-scheme: light;
@@ -356,10 +356,13 @@
   <main class="app">
     <section class="viewport">
       <div class="topbar">
-        <h1>ESP32-S3 智能小车</h1>
+        <h1>ESP32CAM Wi-Fi 智能小车</h1>
         <div class="status-row">
+          <span class="pill"><i id="wifiDot" class="dot"></i><span id="wifiState">Wi-Fi</span></span>
           <span class="pill"><i id="cameraDot" class="dot"></i><span id="cameraState">Camera</span></span>
+          <span class="pill"><i id="audioDot" class="dot warn"></i><span id="audioState">Audio</span></span>
           <span class="pill"><i id="blockDot" class="dot"></i><span id="blockState">Clear</span></span>
+          <span class="pill"><i id="linkDot" class="dot"></i><span id="linkState">Link</span></span>
         </div>
       </div>
       <div class="video-wrap">
@@ -426,6 +429,10 @@
           <div class="metric"><span>距离</span><strong id="distanceState">--</strong></div>
           <div class="metric"><span>左轮</span><strong id="leftState">0%</strong></div>
           <div class="metric"><span>右轮</span><strong id="rightState">0%</strong></div>
+          <div class="metric"><span>控制端</span><strong id="clientState">--</strong></div>
+          <div class="metric"><span>心跳</span><strong id="heartbeatState">--</strong></div>
+          <div class="metric"><span>在线设备</span><strong id="stationState">--</strong></div>
+          <div class="metric"><span>运行时间</span><strong id="uptimeState">--</strong></div>
         </div>
       </div>
     </aside>
@@ -442,6 +449,7 @@
     const talkButton = document.querySelector("#talkButton");
     const intercomState = document.querySelector("#intercomState");
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const clientId = getClientId();
     const intercomSampleRate = 16000;
     const keyMap = new Map([
       ["ArrowUp", "forward"],
@@ -474,11 +482,35 @@
     let audioContext = null;
     let audioSocket = null;
     let audioConnectPromise = null;
+    let commandSeq = 0;
     let playbackTime = 0;
     let talkEnabled = false;
     let micStream = null;
     let micSource = null;
     let micProcessor = null;
+
+    function getClientId() {
+      const key = "esp32cam_car_client_id";
+      const existing = localStorage.getItem(key);
+      if (existing) return existing;
+
+      const random = Math.random().toString(36).slice(2, 10);
+      const id = `web-${Date.now().toString(36)}-${random}`;
+      localStorage.setItem(key, id);
+      return id;
+    }
+
+    function nextSeq() {
+      commandSeq = (commandSeq + 1) >>> 0;
+      return commandSeq;
+    }
+
+    function setLinkState(text, ok = true) {
+      const linkDot = document.querySelector("#linkDot");
+      const linkState = document.querySelector("#linkState");
+      linkDot.classList.toggle("warn", !ok);
+      linkState.textContent = text;
+    }
 
     function setSpeedValue(value) {
       speed.value = String(value);
@@ -488,14 +520,17 @@
     async function sendControl(cmd) {
       activeCmd = cmd;
       const value = speed.value;
+      const seq = nextSeq();
       try {
-        const response = await fetch(`/control?cmd=${encodeURIComponent(cmd)}&speed=${encodeURIComponent(value)}`, {
+        const response = await fetch(`/control?cmd=${encodeURIComponent(cmd)}&speed=${encodeURIComponent(value)}&seq=${seq}&source=web&client=${encodeURIComponent(clientId)}`, {
           cache: "no-store"
         });
         const data = await response.json();
         renderStatus(data);
+        setLinkState("Link", true);
       } catch (error) {
         document.querySelector("#cmdState").textContent = "offline";
+        setLinkState("Offline", false);
       }
     }
 
@@ -514,7 +549,7 @@
       if (!spoken) return;
 
       try {
-        const response = await fetch(`/voice?text=${encodeURIComponent(spoken)}&speed=${encodeURIComponent(speed.value)}`, {
+        const response = await fetch(`/voice?text=${encodeURIComponent(spoken)}&speed=${encodeURIComponent(speed.value)}&seq=${nextSeq()}&client=${encodeURIComponent(clientId)}`, {
           cache: "no-store"
         });
         const data = await response.json();
@@ -526,6 +561,7 @@
         }
       } catch (error) {
         setVoiceState("offline", voiceListening);
+        setLinkState("Offline", false);
       }
     }
 
@@ -875,6 +911,48 @@
       const blockState = document.querySelector("#blockState");
       blockDot.classList.toggle("warn", !!data.blocked);
       blockState.textContent = data.blocked ? "Blocked" : "Clear";
+
+      if (data.network) {
+        const wifiDot = document.querySelector("#wifiDot");
+        const wifiState = document.querySelector("#wifiState");
+        const stations = data.network.station_count ?? 0;
+        wifiDot.classList.toggle("warn", data.network.transport !== "wifi");
+        wifiState.textContent = `${data.network.mode || "ap"} ${data.network.ssid || ""}`;
+        document.querySelector("#stationState").textContent =
+          `${stations}/${data.network.max_station_count ?? "--"}`;
+      }
+
+      if ("audio_ready" in data || "audio_client" in data) {
+        const audioDot = document.querySelector("#audioDot");
+        const audioState = document.querySelector("#audioState");
+        audioDot.classList.toggle("warn", !data.audio_ready || !data.audio_client);
+        audioState.textContent = data.audio_client ? "Audio Live" : (data.audio_ready ? "Audio Ready" : "No Audio");
+      }
+
+      if (data.control_client) {
+        document.querySelector("#clientState").textContent =
+          `${data.control_source || "api"}:${data.control_client}`;
+      } else if (data.client) {
+        document.querySelector("#clientState").textContent =
+          `${data.source || "api"}:${data.client}`;
+      }
+      if (data.heartbeat_age_ms > 0) {
+        document.querySelector("#heartbeatState").textContent = `${data.heartbeat_age_ms} ms`;
+      }
+      if (Number.isFinite(data.uptime_s)) {
+        document.querySelector("#uptimeState").textContent = formatUptime(data.uptime_s);
+      }
+      setLinkState("Link", true);
+    }
+
+    function formatUptime(seconds) {
+      if (!Number.isFinite(seconds)) return "--";
+      const h = Math.floor(seconds / 3600);
+      const m = Math.floor((seconds % 3600) / 60);
+      const s = Math.floor(seconds % 60);
+      if (h > 0) return `${h}h ${m}m`;
+      if (m > 0) return `${m}m ${s}s`;
+      return `${s}s`;
     }
 
     commandButtons.forEach((button) => {
@@ -961,12 +1039,27 @@
         renderStatus(await response.json());
       } catch (error) {
         document.querySelector("#cmdState").textContent = "offline";
+        setLinkState("Offline", false);
+      }
+    }
+
+    async function sendHeartbeat() {
+      try {
+        const response = await fetch(`/heartbeat?seq=${nextSeq()}&source=web&client=${encodeURIComponent(clientId)}`, {
+          cache: "no-store"
+        });
+        await response.json();
+        setLinkState("Link", true);
+      } catch (error) {
+        setLinkState("Offline", false);
       }
     }
 
     setSpeedValue(Number(speed.value));
     sendControl("stop");
+    sendHeartbeat();
     window.setInterval(pollStatus, 1000);
+    window.setInterval(sendHeartbeat, 1000);
   </script>
 </body>
 </html>

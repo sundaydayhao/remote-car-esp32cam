@@ -378,6 +378,13 @@ bool audio_intercom_is_ready(void)
     return s_audio_ready;
 }
 
+bool audio_intercom_has_client(void)
+{
+    httpd_handle_t server = NULL;
+    int fd = -1;
+    return audio_get_ws_client(&server, &fd);
+}
+
 #else
 
 esp_err_t audio_intercom_init(void)
@@ -406,6 +413,11 @@ esp_err_t audio_intercom_play_pcm(const uint8_t *pcm, size_t len)
 }
 
 bool audio_intercom_is_ready(void)
+{
+    return false;
+}
+
+bool audio_intercom_has_client(void)
 {
     return false;
 }

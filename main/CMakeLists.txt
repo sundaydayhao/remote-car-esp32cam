@@ -1,6 +1,7 @@
 idf_component_register(
     SRCS
         "main.c"
+        "control_protocol.c"
         "wifi_ap.c"
         "camera_app.c"
         "motor_control.c"

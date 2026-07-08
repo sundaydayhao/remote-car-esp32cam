@@ -10,6 +10,14 @@
 
 static const char *TAG = "wifi_ap";
 
+static wifi_ap_status_t s_status = {
+    .started = false,
+    .station_count = 0,
+    .max_station_count = CONFIG_CAR_WIFI_MAX_STA,
+    .channel = CONFIG_CAR_WIFI_AP_CHANNEL,
+    .mode = "ap",
+};
+
 static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                                int32_t event_id, void *event_data)
 {
@@ -18,9 +26,15 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
 
     if (event_id == WIFI_EVENT_AP_STACONNECTED) {
         wifi_event_ap_staconnected_t *event = (wifi_event_ap_staconnected_t *)event_data;
+        if (s_status.station_count < s_status.max_station_count) {
+            s_status.station_count++;
+        }
         ESP_LOGI(TAG, "station " MACSTR " joined, aid=%d", MAC2STR(event->mac), event->aid);
     } else if (event_id == WIFI_EVENT_AP_STADISCONNECTED) {
         wifi_event_ap_stadisconnected_t *event = (wifi_event_ap_stadisconnected_t *)event_data;
+        if (s_status.station_count > 0) {
+            s_status.station_count--;
+        }
         ESP_LOGI(TAG, "station " MACSTR " left, aid=%d", MAC2STR(event->mac), event->aid);
     }
 }
@@ -48,6 +62,7 @@ esp_err_t wifi_ap_start(void)
     strlcpy((char *)wifi_config.ap.ssid, CONFIG_CAR_WIFI_AP_SSID, sizeof(wifi_config.ap.ssid));
     strlcpy((char *)wifi_config.ap.password, CONFIG_CAR_WIFI_AP_PASSWORD, sizeof(wifi_config.ap.password));
     wifi_config.ap.ssid_len = strlen(CONFIG_CAR_WIFI_AP_SSID);
+    strlcpy(s_status.ssid, CONFIG_CAR_WIFI_AP_SSID, sizeof(s_status.ssid));
 
     if (strlen(CONFIG_CAR_WIFI_AP_PASSWORD) == 0) {
         wifi_config.ap.authmode = WIFI_AUTH_OPEN;
@@ -56,6 +71,7 @@ esp_err_t wifi_ap_start(void)
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
+    s_status.started = true;
 
     ESP_LOGI(TAG, "AP started: ssid=%s password=%s channel=%d",
              CONFIG_CAR_WIFI_AP_SSID,
@@ -63,4 +79,13 @@ esp_err_t wifi_ap_start(void)
              CONFIG_CAR_WIFI_AP_CHANNEL);
     ESP_LOGI(TAG, "open http://192.168.4.1");
     return ESP_OK;
+}
+
+void wifi_ap_get_status(wifi_ap_status_t *status)
+{
+    if (status == NULL) {
+        return;
+    }
+
+    *status = s_status;
 }
