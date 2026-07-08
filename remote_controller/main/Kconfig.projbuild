@@ -1,0 +1,130 @@
+menu "Remote Controller Configuration"
+
+    menu "Car Wi-Fi"
+        config REMOTE_CAR_WIFI_SSID
+            string "Car AP SSID"
+            default "ESP32CAM-Car"
+
+        config REMOTE_CAR_WIFI_PASSWORD
+            string "Car AP password"
+            default "12345678"
+
+        config REMOTE_CAR_BASE_URL
+            string "Car HTTP base URL"
+            default "http://192.168.4.1"
+
+        config REMOTE_WIFI_RECONNECT_MS
+            int "Wi-Fi reconnect period ms"
+            default 2000
+            range 500 10000
+    endmenu
+
+    menu "Control"
+        config REMOTE_CONTROL_PERIOD_MS
+            int "Control update period ms"
+            default 80
+            range 20 500
+
+        config REMOTE_HEARTBEAT_PERIOD_MS
+            int "Heartbeat period ms"
+            default 1000
+            range 250 5000
+
+        config REMOTE_JOYSTICK_DEADZONE_PERCENT
+            int "Joystick deadzone percent"
+            default 12
+            range 0 40
+
+        config REMOTE_MIN_DRIVE_SPEED
+            int "Minimum non-zero drive speed percent"
+            default 25
+            range 0 100
+
+        config REMOTE_INVERT_DRIVE_X
+            bool "Invert drive joystick X"
+            default n
+
+        config REMOTE_INVERT_DRIVE_Y
+            bool "Invert drive joystick Y"
+            default y
+
+        config REMOTE_INVERT_CAMERA_X
+            bool "Invert camera joystick X"
+            default n
+
+        config REMOTE_INVERT_CAMERA_Y
+            bool "Invert camera joystick Y"
+            default y
+    endmenu
+
+    menu "Joystick GPIO"
+        config REMOTE_DRIVE_JOY_X_GPIO
+            int "Drive joystick X ADC GPIO (-1 disables)"
+            default 34
+            range -1 39
+
+        config REMOTE_DRIVE_JOY_Y_GPIO
+            int "Drive joystick Y ADC GPIO (-1 disables)"
+            default 35
+            range -1 39
+
+        config REMOTE_DRIVE_JOY_BUTTON_GPIO
+            int "Drive joystick button GPIO (-1 disables)"
+            default 32
+            range -1 39
+
+        config REMOTE_CAMERA_JOY_X_GPIO
+            int "Camera joystick X ADC GPIO (-1 disables)"
+            default 36
+            range -1 39
+
+        config REMOTE_CAMERA_JOY_Y_GPIO
+            int "Camera joystick Y ADC GPIO (-1 disables)"
+            default 39
+            range -1 39
+
+        config REMOTE_CAMERA_JOY_BUTTON_GPIO
+            int "Camera joystick button GPIO (-1 disables)"
+            default 33
+            range -1 39
+
+        config REMOTE_ESTOP_BUTTON_GPIO
+            int "Emergency stop button GPIO (-1 disables)"
+            default 25
+            range -1 39
+    endmenu
+
+    menu "TFT Display Reserved Pins"
+        config REMOTE_TFT_ENABLED
+            bool "Enable TFT display task placeholder"
+            default y
+
+        config REMOTE_TFT_WIDTH
+            int "TFT width"
+            default 480
+            range 1 1024
+
+        config REMOTE_TFT_HEIGHT
+            int "TFT height"
+            default 320
+            range 1 1024
+
+        config REMOTE_TFT_BACKLIGHT_GPIO
+            int "TFT backlight GPIO (-1 disables)"
+            default -1
+            range -1 39
+    endmenu
+
+    menu "Audio Reserved Pins"
+        config REMOTE_AUDIO_ENABLED
+            bool "Enable audio client placeholder"
+            default n
+
+        config REMOTE_AUDIO_SAMPLE_RATE_HZ
+            int "Audio sample rate"
+            default 16000
+            range 8000 48000
+            depends on REMOTE_AUDIO_ENABLED
+    endmenu
+
+endmenu

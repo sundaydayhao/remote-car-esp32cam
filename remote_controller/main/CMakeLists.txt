@@ -1,0 +1,19 @@
+idf_component_register(
+    SRCS
+        "main.c"
+        "wifi_client.c"
+        "joystick.c"
+        "car_link.c"
+        "display_app.c"
+        "audio_client.c"
+    INCLUDE_DIRS "."
+    REQUIRES
+        nvs_flash
+        esp_wifi
+        esp_http_client
+        esp_timer
+        esp_adc
+        esp_driver_gpio
+        freertos
+        log
+)

@@ -9,8 +9,10 @@
 - ESP32 SoftAP 热点：默认 `ESP32CAM-Car` / `12345678`
 - OV2640 摄像头 MJPEG 实时视频流：`/stream`
 - 网页遥控：支持触摸、鼠标、键盘方向键和 WASD
+- ESP32 遥控端控制：支持 `source=remote` 的控制和心跳
 - 统一控制协议：控制命令带 `client_id`、`seq`、`source`
 - 心跳接口：手机/控制端定时上报在线状态
+- 摄像头/云台控制占位接口：`/gimbal`，当前返回未启用
 - 状态回传：运动、速度、左右轮输出、避障、Wi-Fi、音频、控制端、运行时间
 - 双直流电机 PWM 调速，默认可适配 TB6612FNG 或 L298N
 - 电机失联保护：超过配置时间未收到控制命令会自动停车
@@ -119,6 +121,20 @@ GET /heartbeat?seq=2&source=web&client=web-abc
 
 用于让小车知道控制端仍在线。当前心跳只记录状态，不直接驱动电机。
 
+### 摄像头/云台控制占位
+
+```text
+GET /gimbal?pan=20&tilt=-10&center=false&seq=4&source=remote&client=remote-abc
+```
+
+当前小车端还没有实现云台舵机驱动，因此该接口返回：
+
+```json
+{"ok":false,"enabled":false,"reason":"gimbal_not_configured"}
+```
+
+这个接口用于先让 `remote_controller` 完整联调摄像头摇杆。后续接入云台硬件后，可以在小车端把 `pan`、`tilt`、`center` 映射到舵机或其他摄像头方向机构。
+
 ### 状态
 
 ```text
@@ -137,6 +153,7 @@ GET /status
 | `audio_ready` / `audio_client` | 对讲模块状态 |
 | `control_client` / `control_source` / `control_seq` | 最近控制端信息 |
 | `heartbeat_age_ms` | 最近心跳距现在的时间 |
+| `gimbal.enabled` | 摄像头/云台控制是否启用，当前为 `false` |
 | `network.transport` | 当前为 `wifi` |
 | `network.station_count` | 当前连接热点的设备数量 |
 | `expansion.cellular_reserved` | 是否保留蜂窝网络扩展位 |

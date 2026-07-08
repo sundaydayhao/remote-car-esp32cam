@@ -127,6 +127,14 @@ static uint32_t parse_u32(const char *value)
     return (uint32_t)strtoul(value, NULL, 10);
 }
 
+static int parse_int_default(const char *value, int default_value)
+{
+    if (value == NULL || value[0] == '\0') {
+        return default_value;
+    }
+    return atoi(value);
+}
+
 static void normalize_client_id(char *value)
 {
     if (value == NULL || value[0] == '\0') {
@@ -374,6 +382,48 @@ static esp_err_t heartbeat_handler(httpd_req_t *req)
     return httpd_resp_send(req, body, len);
 }
 
+static esp_err_t gimbal_handler(httpd_req_t *req)
+{
+    char query[192] = {0};
+    char pan_value[8] = {0};
+    char tilt_value[8] = {0};
+    char center_value[8] = {0};
+    char seq_value[16] = {0};
+    char source_value[16] = "remote";
+    char client_id[CAR_CONTROL_CLIENT_ID_MAX_LEN + 1] = "anonymous";
+
+    if (httpd_req_get_url_query_str(req, query, sizeof(query)) == ESP_OK) {
+        httpd_query_key_value(query, "pan", pan_value, sizeof(pan_value));
+        httpd_query_key_value(query, "tilt", tilt_value, sizeof(tilt_value));
+        httpd_query_key_value(query, "center", center_value, sizeof(center_value));
+        httpd_query_key_value(query, "seq", seq_value, sizeof(seq_value));
+        httpd_query_key_value(query, "source", source_value, sizeof(source_value));
+        httpd_query_key_value(query, "client", client_id, sizeof(client_id));
+    }
+    normalize_client_id(client_id);
+
+    int pan = parse_int_default(pan_value, 0);
+    int tilt = parse_int_default(tilt_value, 0);
+    bool center = strcmp(center_value, "true") == 0 || strcmp(center_value, "1") == 0;
+    uint32_t seq = parse_u32(seq_value);
+    car_control_source_t source = control_protocol_source_from_string(source_value);
+    control_protocol_heartbeat(client_id, source, seq);
+
+    char body[256];
+    int len = snprintf(body, sizeof(body),
+                       "{\"ok\":false,\"enabled\":false,\"reason\":\"gimbal_not_configured\","
+                       "\"pan\":%d,\"tilt\":%d,\"center\":%s,\"seq\":%lu,"
+                       "\"source\":\"%s\",\"client\":\"%s\"}\n",
+                       pan, tilt, center ? "true" : "false",
+                       (unsigned long)seq,
+                       control_protocol_source_to_string(source),
+                       client_id);
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    return httpd_resp_send(req, body, len);
+}
+
 #if CONFIG_HTTPD_WS_SUPPORT && CONFIG_CAR_ENABLE_INTERCOM
 static esp_err_t audio_ws_handler(httpd_req_t *req)
 {
@@ -460,6 +510,7 @@ static esp_err_t status_handler(httpd_req_t *req)
                        "\"control_age_ms\":%lu,\"heartbeat_age_ms\":%lu,"
                        "\"control_seq\":%lu,\"control_source\":\"%s\","
                        "\"control_client\":\"%s\","
+                       "\"gimbal\":{\"enabled\":false},"
                        "\"network\":{\"transport\":\"wifi\",\"mode\":\"%s\","
                        "\"ssid\":\"%s\",\"channel\":%u,\"station_count\":%u,"
                        "\"max_station_count\":%u},"
@@ -497,7 +548,7 @@ esp_err_t web_server_start(void)
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 80;
     config.stack_size = 8192;
-    config.max_uri_handlers = 10;
+    config.max_uri_handlers = 11;
     config.lru_purge_enable = true;
     config.recv_wait_timeout = 5;
     config.send_wait_timeout = 5;
@@ -543,6 +594,11 @@ esp_err_t web_server_start(void)
         .method = HTTP_GET,
         .handler = heartbeat_handler,
     };
+    const httpd_uri_t uri_gimbal = {
+        .uri = "/gimbal",
+        .method = HTTP_GET,
+        .handler = gimbal_handler,
+    };
 #if CONFIG_HTTPD_WS_SUPPORT && CONFIG_CAR_ENABLE_INTERCOM
     const httpd_uri_t uri_audio = {
         .uri = "/audio",
@@ -559,6 +615,7 @@ esp_err_t web_server_start(void)
     ESP_ERROR_CHECK(httpd_register_uri_handler(s_server, &uri_status));
     ESP_ERROR_CHECK(httpd_register_uri_handler(s_server, &uri_voice));
     ESP_ERROR_CHECK(httpd_register_uri_handler(s_server, &uri_heartbeat));
+    ESP_ERROR_CHECK(httpd_register_uri_handler(s_server, &uri_gimbal));
 #if CONFIG_HTTPD_WS_SUPPORT && CONFIG_CAR_ENABLE_INTERCOM
     ESP_ERROR_CHECK(httpd_register_uri_handler(s_server, &uri_audio));
 #endif
