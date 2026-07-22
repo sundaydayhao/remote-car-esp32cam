@@ -1,39 +1,41 @@
 # Remote Car ESP32CAM
 
-本仓库包含两个相互独立的 ESP-IDF 项目：
+This repository contains three independent front ends for the same car firmware:
 
-- `car_controller/`：小车端。ESP32-CAM 创建 Wi-Fi AP，提供视频流、网页控制、HTTP 控制接口、状态接口和可选音频对讲。
-- `remote_controller/`：遥控端。ESP32 作为 Wi-Fi STA 连接小车 AP，读取两个摇杆，发送控制/心跳/摄像头方向请求，并预留 4 寸 TFT 视频显示和音频对讲模块。
+- `car_controller/`: ESP32-CAM car firmware, creates the Wi-Fi AP and serves the control API.
+- `remote_controller/`: ESP32 handheld remote controller.
+- `android_app/`: Android phone app.
+- `web_app/`: standalone web UI source.
 
-两个目录都应从各自目录单独构建，不要在一个项目里引用另一个项目的源码。
+Each folder is meant to stay independent. Do not mix source files across them.
 
-## 构建
+## Quick Start
 
-Windows PowerShell 下先导出 ESP-IDF 环境：
-
-```powershell
-. C:\esp\v6.0.2\esp-idf\export.ps1
-```
-
-构建小车端：
+Car firmware:
 
 ```powershell
 cd car_controller
 idf.py build
 ```
 
-构建遥控端：
+ESP32 remote controller:
 
 ```powershell
 cd remote_controller
 idf.py build
 ```
 
-## 当前通信方式
+Android app:
 
-当前只使用 Wi-Fi，不实现 4G。
+- Open `android_app/` in Android Studio.
 
-小车端默认创建 AP：
+Web UI:
+
+- Serve `web_app/` from the same origin as the car controller, or place it behind a reverse proxy.
+
+## Car AP
+
+Default AP settings:
 
 ```text
 SSID: ESP32CAM-Car
@@ -41,20 +43,48 @@ Password: 12345678
 Base URL: http://192.168.4.1
 ```
 
-遥控端默认连接该 AP，并使用：
+## HTTP API
 
-- `GET /heartbeat?source=remote`
-- `GET /control?source=remote`
-- `GET /gimbal?source=remote`
+The car firmware exposes:
 
-视频和音频后续继续复用小车端：
-
+- `GET /status`
+- `GET /control`
+- `GET /gimbal`
+- `GET /heartbeat`
 - `GET /stream`
+- `GET /jpg`
 - `WebSocket /audio`
 
-## 当前实现状态
+## Front Ends
 
-- 小车端可独立运行，并支持手机网页控制。
-- 遥控端已具备独立 IDF 工程骨架。
-- 遥控端已实现 Wi-Fi STA、摇杆 ADC 输入、心跳、车体控制请求和摄像头/云台占位请求。
-- 遥控端 TFT 和音频模块已拆分为独立占位模块，等待接入具体屏幕驱动、MJPEG 解码和 I2S/WebSocket 音频。
+### Android app
+
+The Android app uses the car HTTP API directly. It includes:
+
+- base URL configuration
+- drive controls
+- speed slider
+- gimbal controls
+- status polling
+- snapshot preview
+
+See [android_app/README.md](android_app/README.md).
+
+### Web UI
+
+The web UI is a standalone source folder for a browser-based controller. It includes:
+
+- drive controls
+- speed control
+- gimbal controls
+- live stream preview
+- status polling
+- snapshot fallback
+
+See [web_app/README.md](web_app/README.md).
+
+## Notes
+
+- The car currently runs on Wi-Fi only.
+- The web UI must be served from the same origin as the car, or through a proxy, because the firmware does not provide CORS headers.
+- `/audio` is reserved for future intercom support.
