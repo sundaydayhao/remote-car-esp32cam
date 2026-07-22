@@ -1,2 +1,6 @@
 */build*/
 */managed_components/
+**/.gradle/
+**/.idea/
+**/*.iml
+android_app/local.properties
