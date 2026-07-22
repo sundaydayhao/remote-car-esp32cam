@@ -1,0 +1,279 @@
+:root {
+  color-scheme: light;
+  --bg: #eef2ed;
+  --panel: #ffffff;
+  --ink: #20262b;
+  --muted: #66706b;
+  --line: #d9e0da;
+  --accent: #0a7c86;
+  --accent-dark: #055a61;
+  --danger: #c54b32;
+  --ok: #2f7d32;
+  --shadow: 0 10px 28px rgba(18, 25, 21, 0.12);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+body {
+  min-height: 100vh;
+}
+
+button, input {
+  font: inherit;
+}
+
+button {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8faf8;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+button:active,
+button.active {
+  transform: translateY(1px);
+  border-color: var(--accent);
+  background: #e5f3f4;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.app {
+  width: min(1440px, 100%);
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 16px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 16px;
+}
+
+.stage, .panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.stage {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-width: 0;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.brand h1 {
+  margin: 0 0 8px;
+  font-size: 18px;
+  line-height: 1.2;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pill {
+  min-height: 28px;
+  padding: 6px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fbfcfa;
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ok);
+}
+
+.dot.warn {
+  background: var(--danger);
+}
+
+.endpoint {
+  min-width: 280px;
+}
+
+.endpoint label,
+.block h2,
+.speed label {
+  display: block;
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.endpoint-row,
+.row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.endpoint-row input {
+  min-width: 0;
+}
+
+input[type="text"] {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 12px;
+  background: #fff;
+  color: var(--ink);
+}
+
+.preview {
+  position: relative;
+  min-height: 420px;
+  background: #111;
+}
+
+.stream {
+  width: 100%;
+  height: 100%;
+  min-height: 420px;
+  object-fit: contain;
+  display: block;
+  background: #111;
+}
+
+.fallback {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: 14px;
+  background: rgba(0, 0, 0, 0.65);
+}
+
+.hidden {
+  display: none;
+}
+
+.panel {
+  padding: 16px;
+  display: grid;
+  gap: 16px;
+  align-content: start;
+}
+
+.block {
+  display: grid;
+  gap: 10px;
+}
+
+.block h2 {
+  margin: 0;
+}
+
+.dpad {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(3, 68px);
+  gap: 8px;
+}
+
+.pad {
+  font-size: 28px;
+  font-weight: 800;
+}
+
+.stop {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+  font-size: 18px;
+  font-weight: 800;
+}
+
+.up, .down, .left, .right {
+  background: #f7faf7;
+}
+
+.speed {
+  display: grid;
+  gap: 8px;
+}
+
+.speed input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.speed span {
+  font-variant-numeric: tabular-nums;
+}
+
+.status-list {
+  display: grid;
+  gap: 8px;
+}
+
+.status-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfa;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.status-item span:last-child {
+  text-align: right;
+  color: var(--muted);
+  word-break: break-word;
+}
+
+@media (max-width: 980px) {
+  .app {
+    grid-template-columns: 1fr;
+  }
+
+  .topbar {
+    flex-direction: column;
+  }
+
+  .endpoint {
+    min-width: 0;
+  }
+}
+
+.row {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
