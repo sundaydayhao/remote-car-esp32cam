@@ -3,4 +3,5 @@
 **/.gradle/
 **/.idea/
 **/*.iml
+**/app/build/
 android_app/local.properties
