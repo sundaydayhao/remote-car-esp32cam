@@ -1,106 +1,145 @@
-﻿# Remote Car Wiring Guide
+# Remote Car Wiring Guide
 
-本文档记录 `car_controller` 小车控制端的推荐接线。目标功能包括：
+本文档记录 `car_controller` 小车控制端的接线方案。当前硬件目标改为使用 GOOOUUU / 同类 ESP32-S3-CAM 开发板，功能包括：
 
-- 两个直流减速电机控制
-- 摄像头云台左右 / 上下控制
-- 车端麦克风采集
-- 车端扬声器播放
-- IO 不够时使用 PCF8574 扩展低速数字输出
+- OV2640 摄像头
+- Micro SD 卡
+- 两个直流减速电机
+- 摄像头云台 Pan / Tilt 两个舵机
+- I2S 数字麦克风
+- I2S 数字功放 + 扬声器
 
 ## 重要结论
 
-如果使用常见 AI-Thinker ESP32-CAM，同时启用摄像头、两路电机、两个舵机、I2S 麦克风和 I2S 扬声器，原生 IO 基本不够。PCF8574 只能扩展低速数字输入 / 输出，适合接 L298N 的 IN1-IN4、LED、蜂鸣器使能等，不适合直接接舵机 PWM，也不适合接 I2S 麦克风或 I2S 功放。
+这块 ESP32-S3-CAM 的 GPIO 比 AI-Thinker ESP32-CAM 宽裕很多。按照图片标注，摄像头、SD 卡和 PSRAM 占用固定引脚后，仍然可以分配出足够 GPIO 做电机、云台和音频。
 
-因此推荐两种方案：
+不建议继续使用 L298N 作为最终电机驱动。L298N 压降大、发热明显、效率低。推荐使用 TB6612FNG 或 DRV8833。两者都可以驱动两个小直流电机，接线逻辑类似。
 
-| 方案 | 适用情况 | 说明 |
-| --- | --- | --- |
-| A. 直连简化方案 | 只做摄像头 + 两电机 + 双舵机 | 不接车端麦克风 / 扬声器，L298N 方向脚和舵机都接 ESP32-CAM |
-| B. PCF8574 扩展方案 | 摄像头 + 两电机 + 双舵机 + 音频 | L298N 方向脚放到 PCF8574，ESP32 原生 GPIO 留给舵机和 I2S 音频 |
+## 1. 板载资源占用
 
-如果要求所有功能稳定同时运行，更建议使用 ESP32-S3-CAM 或其他 IO 更多的 ESP32 开发板。
-
-## 1. 电源总接线
-
-建议使用电池给 L298N 和 LM2596 供电，LM2596 输出稳定 5V 给 ESP32-CAM、舵机和音频模块。接 ESP32-CAM 前，先用万用表把 LM2596 输出调到 5.0V 左右。
-
-```text
-电池正极 + -> 电源开关 -> 分两路：
-                       1. L298N +12V / VMS
-                       2. LM2596 IN+
-
-电池负极 - -> L298N GND
-电池负极 - -> LM2596 IN-
-
-LM2596 OUT+ 5V -> ESP32-CAM 5V
-LM2596 OUT+ 5V -> SG90 Pan 红线
-LM2596 OUT+ 5V -> SG90 Tilt 红线
-LM2596 OUT+ 5V -> I2S 麦克风 VCC
-LM2596 OUT+ 5V -> I2S 功放 VIN / 5V
-
-LM2596 OUT- GND -> ESP32-CAM GND
-LM2596 OUT- GND -> L298N GND
-LM2596 OUT- GND -> SG90 Pan 棕色 / 黑色线
-LM2596 OUT- GND -> SG90 Tilt 棕色 / 黑色线
-LM2596 OUT- GND -> I2S 麦克风 GND
-LM2596 OUT- GND -> I2S 功放 GND
-```
-
-所有模块必须共地：ESP32-CAM GND、L298N GND、LM2596 OUT-、两个 SG90 GND、麦克风 GND、功放 GND 都要连在一起。
-
-两个 SG90 和扬声器动作时电流较大，LM2596 建议至少 5V 3A。不要从 ESP32-CAM 的 5V 引脚反向带舵机和功放，应该从 LM2596 5V 输出端直接分线。
-
-## 2. ESP32-CAM 摄像头固定占用
-
-AI-Thinker ESP32-CAM 摄像头通常已经占用以下 GPIO，不要再接电机、舵机或音频：
+根据你提供的 ESP32-S3-CAM 引脚图，以下 GPIO 已经被板载功能占用，不建议再接外设。
 
 | 功能 | GPIO |
 | --- | --- |
-| PWDN | GPIO32 |
-| XCLK | GPIO0 |
-| SIOD / SDA | GPIO26 |
-| SIOC / SCL | GPIO27 |
-| D7 / Y9 | GPIO35 |
-| D6 / Y8 | GPIO34 |
-| D5 / Y7 | GPIO39 |
-| D4 / Y6 | GPIO36 |
-| D3 / Y5 | GPIO21 |
-| D2 / Y4 | GPIO19 |
-| D1 / Y3 | GPIO18 |
-| D0 / Y2 | GPIO5 |
-| VSYNC | GPIO25 |
-| HREF | GPIO23 |
-| PCLK | GPIO22 |
+| 摄像头 SIOD | GPIO4 |
+| 摄像头 SIOC | GPIO5 |
+| 摄像头 VSYNC | GPIO6 |
+| 摄像头 HREF | GPIO7 |
+| 摄像头 Y4 | GPIO8 |
+| 摄像头 Y3 | GPIO9 |
+| 摄像头 Y5 | GPIO10 |
+| 摄像头 Y2 | GPIO11 |
+| 摄像头 Y6 | GPIO12 |
+| 摄像头 PCLK | GPIO13 |
+| 摄像头 XCLK | GPIO15 |
+| 摄像头 Y9 | GPIO16 |
+| 摄像头 Y8 | GPIO17 |
+| 摄像头 Y7 | GPIO18 |
+| USB D- | GPIO20 |
+| USB D+ | GPIO19 |
+| PSRAM | GPIO35、GPIO36、GPIO37 |
+| SD DATA | GPIO40 |
+| SD CLK | GPIO39 |
+| SD CMD | GPIO38 |
+| BOOT | GPIO0 |
+| UART0 TX/RX | GPIO43、GPIO44 |
+| 板载 LED / WS2812 | GPIO2、GPIO48 |
 
-可优先考虑的外设 GPIO 通常只剩 GPIO12、GPIO13、GPIO14、GPIO15、GPIO2、GPIO4、GPIO16。GPIO12、GPIO2、GPIO4、GPIO15 都和启动状态有关，接线错误可能导致无法启动。
-
-## 3. 方案 A：直连简化方案
-
-此方案适合先实现摄像头、两个电机和双舵机。暂不接车端麦克风和扬声器。
-
-### 3.1 L298N 电机驱动
-
-当前固件默认给左右电机各一路 PWM，因此 L298N 的 ENA / ENB 跳帽需要拔掉，由 ESP32-CAM 输出 PWM 调速。
-
-| L298N | ESP32-CAM | 固件配置项 |
-| --- | --- | --- |
-| ENA | GPIO12 | `CONFIG_CAR_MOTOR_LEFT_PWM_GPIO` |
-| IN1 | GPIO13 | `CONFIG_CAR_MOTOR_LEFT_IN1_GPIO` |
-| IN2 | GPIO15 | `CONFIG_CAR_MOTOR_LEFT_IN2_GPIO` |
-| ENB | GPIO14 | `CONFIG_CAR_MOTOR_RIGHT_PWM_GPIO` |
-| IN3 | GPIO2 | `CONFIG_CAR_MOTOR_RIGHT_IN1_GPIO` |
-| IN4 | GPIO4 | `CONFIG_CAR_MOTOR_RIGHT_IN2_GPIO` |
-| GND | GND | 公共地 |
+可优先用于外设的 GPIO：
 
 ```text
-左电机 -> L298N OUT1 / OUT2
-右电机 -> L298N OUT3 / OUT4
+GPIO1, GPIO3, GPIO14, GPIO21, GPIO41, GPIO42, GPIO45, GPIO47
 ```
 
-如果 App 点前进时某个轮子反转，把该电机在 L298N 上的 OUT 两根线对调。若左右整体相反，可以交换左右电机输出，或修改固件里的左右电机反向配置。
+如果不需要板载 WS2812，可以使用 GPIO48。GPIO43 / GPIO44 是串口调试口，正常运行时也可以复用，但调试会不方便。
 
-### 3.2 SG90 摄像头云台
+## 2. 推荐 GPIO 分配
+
+本方案保留 USB、SD 卡、摄像头和 PSRAM，不占用 GPIO19 / GPIO20 / GPIO35-GPIO40。串口 GPIO43 / GPIO44 尽量保留给日志。
+
+| 外设功能 | 推荐 GPIO | 说明 |
+| --- | --- | --- |
+| 左电机 PWM / PWMA | GPIO1 | LEDC PWM |
+| 左电机 AIN1 | GPIO3 | 普通数字输出 |
+| 左电机 AIN2 | GPIO14 | 普通数字输出 |
+| 右电机 PWM / PWMB | GPIO21 | LEDC PWM |
+| 右电机 BIN1 | GPIO41 | 普通数字输出 |
+| 右电机 BIN2 | GPIO42 | 普通数字输出 |
+| 云台 Pan 舵机 | GPIO45 | 50Hz PWM |
+| 云台 Tilt 舵机 | GPIO47 | 50Hz PWM |
+| I2S BCLK | GPIO43 | 麦克风和功放共用 |
+| I2S WS / LRCLK | GPIO44 | 麦克风和功放共用 |
+| I2S 麦克风 DOUT | GPIO48 | 麦克风数据输入 |
+| I2S 功放 DIN | GPIO2 | 音频数据输出 |
+
+注意：GPIO2 和 GPIO48 在图中标了板载 LED / WS2812。若板载 LED 会影响音频，改用 GPIO43 / GPIO44 做音频数据线，并用 USB CDC 日志替代 UART0 日志。
+
+## 3. 电源总接线
+
+建议使用电池给电机驱动和 LM2596 降压模块供电，LM2596 输出稳定 5V 给 ESP32-S3-CAM、舵机和 I2S 功放。接板子前，先用万用表把 LM2596 输出调到 5.0V 左右。
+
+```text
+电池正极 + -> 电源开关 -> 分两路：
+                       1. 电机驱动 VM / VMOT
+                       2. LM2596 IN+
+
+电池负极 - -> 电机驱动 GND
+电池负极 - -> LM2596 IN-
+
+LM2596 OUT+ 5V -> ESP32-S3-CAM 5V
+LM2596 OUT+ 5V -> SG90 Pan 红线
+LM2596 OUT+ 5V -> SG90 Tilt 红线
+LM2596 OUT+ 5V -> MAX98357A VIN
+
+LM2596 OUT- GND -> ESP32-S3-CAM GND
+LM2596 OUT- GND -> 电机驱动 GND
+LM2596 OUT- GND -> SG90 Pan 棕色 / 黑色线
+LM2596 OUT- GND -> SG90 Tilt 棕色 / 黑色线
+LM2596 OUT- GND -> INMP441 GND
+LM2596 OUT- GND -> MAX98357A GND
+```
+
+所有模块必须共地。两个舵机和扬声器动作时电流较大，LM2596 建议至少 5V 3A。不要从 ESP32-S3-CAM 的 3V3 引脚给舵机或功放供电。
+
+## 4. TB6612FNG 电机驱动接线
+
+推荐使用 TB6612FNG。它比 L298N 效率高、压降低、发热小，更适合电池小车。
+
+| TB6612FNG | 连接到 | 说明 |
+| --- | --- | --- |
+| VM | 电池正极，经过电源开关 | 电机电源 |
+| VCC | ESP32-S3-CAM 3V3 | 逻辑电源 |
+| GND | 公共 GND | 必须和 ESP32 共地 |
+| STBY | 3V3 | 固定使能；也可接一个 GPIO 控制 |
+| PWMA | GPIO1 | 左电机 PWM |
+| AIN1 | GPIO3 | 左电机方向 1 |
+| AIN2 | GPIO14 | 左电机方向 2 |
+| PWMB | GPIO21 | 右电机 PWM |
+| BIN1 | GPIO41 | 右电机方向 1 |
+| BIN2 | GPIO42 | 右电机方向 2 |
+| AO1 / AO2 | 左电机两根线 | 方向反了就对调 |
+| BO1 / BO2 | 右电机两根线 | 方向反了就对调 |
+
+如果 App 点前进时某个轮子反转，把该电机在 TB6612FNG 上的输出两根线对调。若左右整体相反，可以交换左右电机输出，或修改固件里的左右电机反向配置。
+
+## 5. DRV8833 电机驱动接线
+
+如果使用 DRV8833，可以按下面接。DRV8833 通常不需要单独的方向脚和 PWM 脚，直接给 `IN1/IN2` 输入 PWM / 电平组合即可。为了兼容当前固件“PWM + IN1 + IN2”的模型，推荐优先用 TB6612FNG。
+
+| DRV8833 | 连接到 | 说明 |
+| --- | --- | --- |
+| VM | 电池正极，经过电源开关 | 电机电源 |
+| GND | 公共 GND | 必须和 ESP32 共地 |
+| AIN1 | GPIO3 | 左电机输入 1 |
+| AIN2 | GPIO14 | 左电机输入 2 |
+| BIN1 | GPIO41 | 右电机输入 1 |
+| BIN2 | GPIO42 | 右电机输入 2 |
+| AOUT1 / AOUT2 | 左电机两根线 | 方向反了就对调 |
+| BOUT1 / BOUT2 | 右电机两根线 | 方向反了就对调 |
+
+若用 DRV8833，固件里的电机 PWM 逻辑最好调整为在 IN1/IN2 上直接输出 PWM，而不是单独使用 ENA/ENB。
+
+## 6. 摄像头云台接线
 
 SG90 常见线色：
 
@@ -108,149 +147,92 @@ SG90 常见线色：
 | --- | --- | --- |
 | 棕色 / 黑色 | GND | LM2596 OUT- / 公共 GND |
 | 红色 | 5V | LM2596 OUT+ 5V |
-| 黄色 / 橙色 | PWM 信号 | ESP32-CAM 原生 GPIO |
+| 黄色 / 橙色 | PWM 信号 | ESP32-S3-CAM 原生 GPIO |
 
-直连简化方案中，电机已经占用了主要可用 GPIO，所以云台需要调整固件引脚，或者改用方案 B 释放 GPIO。推荐不要把舵机信号接 PCF8574。
+推荐接线：
 
-## 4. 方案 B：PCF8574 扩展方案
-
-此方案把 L298N 的 4 根方向线移到 PCF8574，ESP32-CAM 只负责两路电机 PWM、两个舵机 PWM 和 I2S 音频。PCF8574 只能控制方向，不能输出稳定 PWM。
-
-### 4.1 PCF8574 与 ESP32-CAM
-
-PCF8574 是 I2C 扩展芯片。由于 ESP32-CAM 摄像头 SCCB 已占用 GPIO26 / GPIO27，不建议共用摄像头线。实际接线建议使用仍可用的 GPIO16 作为 SDA，并选择一个未被当前硬件占用的 GPIO 作为 SCL；如果没有空闲 GPIO，AI-Thinker ESP32-CAM 不适合同时实现所有功能。
-
-| PCF8574 | ESP32-CAM | 说明 |
+| 云台方向 | SG90 信号线 | ESP32-S3-CAM |
 | --- | --- | --- |
-| VCC | 3V3 | 推荐 3.3V 供电，避免 I2C 上拉到 5V |
-| GND | GND | 公共地 |
-| SDA | GPIO16 | I2C 数据 |
-| SCL | 需要空闲 GPIO | I2C 时钟 |
-| A0 | GND | 地址选择 |
-| A1 | GND | 地址选择 |
-| A2 | GND | 地址选择 |
-
-当 A0/A1/A2 都接 GND 时，PCF8574 常见 7-bit I2C 地址为 `0x20`。部分模块是 PCF8574A，地址范围不同，常见为 `0x38`。
-
-### 4.2 PCF8574 到 L298N
-
-L298N 的 ENA / ENB 仍由 ESP32 原生 PWM 控制，IN1-IN4 由 PCF8574 控制方向。
-
-| L298N | 连接到 | 说明 |
-| --- | --- | --- |
-| ENA | ESP32-CAM GPIO12 | 左电机 PWM |
-| ENB | ESP32-CAM GPIO14 | 右电机 PWM |
-| IN1 | PCF8574 P0 | 左电机方向 1 |
-| IN2 | PCF8574 P1 | 左电机方向 2 |
-| IN3 | PCF8574 P2 | 右电机方向 1 |
-| IN4 | PCF8574 P3 | 右电机方向 2 |
-| GND | 公共 GND | 必须共地 |
-
-PCF8574 输出驱动能力弱，只适合接 L298N 逻辑输入，不要直接带电机、舵机、继电器线圈或扬声器。
-
-注意：当前固件的 `motor_control.c` 仍按 ESP32 GPIO 直接控制 L298N IN1-IN4。若采用 PCF8574，需要修改固件，增加 I2C 初始化和 PCF8574 输出逻辑。
-
-## 5. 云台左右 / 上下控制
-
-推荐云台舵机信号线接 ESP32 原生 GPIO，因为舵机需要稳定 50Hz PWM。
-
-| 云台方向 | SG90 信号线 | 推荐 GPIO | 说明 |
-| --- | --- | --- | --- |
-| Pan 左右 | 黄色 / 橙色 | GPIO13 | 需要固件增加舵机 PWM |
-| Tilt 上下 | 黄色 / 橙色 | GPIO15 | 需要固件增加舵机 PWM |
-
-如果 GPIO13 / GPIO15 已用于直连电机方向，请改用方案 B，把 L298N 方向脚移到 PCF8574。
+| Pan 左右 | 黄色 / 橙色 | GPIO45 |
+| Tilt 上下 | 黄色 / 橙色 | GPIO47 |
 
 当前 `car_controller` 的 `/gimbal` 接口仍是占位实现，会返回 `gimbal_not_configured`。接好舵机后，还需要在固件中增加两路 SG90 PWM 控制逻辑。
 
-## 6. 麦克风接线
+## 7. I2S 麦克风接线
 
-推荐使用 I2S 数字麦克风模块，例如 INMP441。I2S 必须接 ESP32 原生 GPIO，不能接 PCF8574。
+推荐使用 INMP441 或同类 I2S 数字麦克风。I2S 必须接 ESP32 原生 GPIO，不能接 PCF8574。
 
-| INMP441 | ESP32 原生 GPIO | 说明 |
+| INMP441 | ESP32-S3-CAM | 说明 |
 | --- | --- | --- |
-| VDD | 3V3 | 按模块要求供电；多数 INMP441 用 3.3V |
-| GND | GND | 公共地 |
-| SCK / BCLK | 空闲输出 GPIO | I2S bit clock |
-| WS / LRCL | 空闲输出 GPIO | I2S word select |
-| SD / DOUT | 空闲输入 GPIO | 麦克风数据输入 |
+| VDD | 3V3 | 多数 INMP441 使用 3.3V |
+| GND | 公共 GND | 必须共地 |
+| SCK / BCLK | GPIO43 | I2S bit clock |
+| WS / LRCL | GPIO44 | I2S word select |
+| SD / DOUT | GPIO48 | 麦克风数据输入 |
 | L/R | GND | 左声道；若接 3V3，固件需启用 right slot |
 
-当前 Kconfig 默认音频 GPIO 是 `35/36/37/38/45/46`，这些默认值不适合普通 ESP32-CAM：GPIO35/36 是摄像头输入脚，GPIO37/38/45/46 在 ESP32-CAM 上通常不可用。启用音频前必须在 `idf.py menuconfig` 中改成实际可用引脚。
+## 8. I2S 功放和扬声器接线
 
-## 7. 扬声器接线
+推荐使用 MAX98357A I2S 数字功放。不要把喇叭直接接 ESP32 GPIO。
 
-推荐使用 I2S 数字功放模块，例如 MAX98357A。不要把喇叭直接接 ESP32 GPIO。
-
-| MAX98357A | ESP32 原生 GPIO / 电源 | 说明 |
+| MAX98357A | ESP32-S3-CAM / 电源 | 说明 |
 | --- | --- | --- |
-| VIN | LM2596 OUT+ 5V | 按模块支持范围供电，常见可用 3.3V 或 5V |
-| GND | GND | 公共地 |
-| BCLK | 空闲输出 GPIO | I2S bit clock |
-| LRC / WS | 空闲输出 GPIO | I2S word select |
-| DIN | 空闲输出 GPIO | 音频数据输出 |
-| SD / EN | 3V3 或按模块说明接使能 | 不用时可固定使能 |
-| + / - | 喇叭两端 | 4Ω / 8Ω 小喇叭，按功放模块规格选择 |
+| VIN | LM2596 OUT+ 5V | 按模块支持范围供电 |
+| GND | 公共 GND | 必须共地 |
+| BCLK | GPIO43 | 与麦克风共用 BCLK |
+| LRC / WS | GPIO44 | 与麦克风共用 WS |
+| DIN | GPIO2 | ESP32 输出到功放 |
+| SD / EN | 3V3 | 固定使能，或按模块说明接 |
+| + / - | 喇叭两端 | 4Ω / 8Ω 小喇叭 |
 
-扬声器功放电流脉冲明显，功放 VIN/GND 建议直接从 LM2596 输出端取电，不要从 ESP32-CAM 板子的 5V/GND 小焊盘串过去。
+扬声器功放电流脉冲明显，功放 VIN/GND 建议直接从 LM2596 输出端取电，不要从 ESP32-S3-CAM 板子的 5V/GND 小焊盘串过去。
 
-## 8. 烧录注意
+## 9. 固件配置提醒
 
-烧录程序时：
+当前固件默认还是 AI-Thinker ESP32-CAM 的 GPIO 配置。换成 ESP32-S3-CAM 后，需要同步修改：
 
-```text
-GPIO0 -> GND
-```
+- `CONFIG_IDF_TARGET` 改为 `esp32s3`
+- 摄像头 GPIO 改成 ESP32-S3-CAM 引脚图里的 GPIO4-GPIO18
+- 电机 GPIO 改成本文档第 2 节推荐分配
+- 音频 GPIO 改成 GPIO43 / GPIO44 / GPIO48 / GPIO2
+- 增加云台两路 SG90 PWM 控制逻辑
+- 如果使用 DRV8833，需要调整电机 PWM 输出方式
 
-烧录完成并正常运行时：
+当前 `motor_control.c` 适合 TB6612FNG 这种 `PWM + IN1 + IN2` 的驱动方式。若选择 TB6612FNG，固件改动最小。
 
-```text
-GPIO0 必须断开 GND
-```
+## 10. 烧录和调试注意
 
-如果烧录或串口日志异常，先拔掉 L298N 控制线、舵机信号线、PCF8574 I2C 线和音频 I2S 线，只保留 ESP32-CAM 的 5V / GND / 串口烧录线。确认程序能正常启动后，再逐步接回外设。
+这块板子有 USB 口，优先用 USB 烧录和串口日志。烧录失败时检查 BOOT 键和 RST 键。
 
-## 9. 总接线速查
+如果启动或日志异常，先拔掉电机驱动、舵机信号线和音频 I2S 线，只保留 ESP32-S3-CAM 的 USB 连接。确认固件能正常启动后，再逐步接回外设。
 
-### 9.1 电源
+## 11. 总接线速查
 
-| 模块端子 | 连接到 |
+| 外设 | 连接到 |
 | --- | --- |
 | 电池 + | 电源开关输入 |
-| 电源开关输出 | L298N +12V / VMS、LM2596 IN+ |
-| 电池 - | L298N GND、LM2596 IN- |
-| LM2596 OUT+ | ESP32-CAM 5V、SG90 红线、功放 VIN |
-| LM2596 OUT- | ESP32-CAM GND、L298N GND、SG90 GND、音频模块 GND |
-
-### 9.2 直连简化方案
-
-| 外设 | 连接到 |
-| --- | --- |
-| L298N ENA | ESP32-CAM GPIO12 |
-| L298N IN1 | ESP32-CAM GPIO13 |
-| L298N IN2 | ESP32-CAM GPIO15 |
-| L298N ENB | ESP32-CAM GPIO14 |
-| L298N IN3 | ESP32-CAM GPIO2 |
-| L298N IN4 | ESP32-CAM GPIO4 |
-| 左电机 | L298N OUT1 / OUT2 |
-| 右电机 | L298N OUT3 / OUT4 |
-
-### 9.3 PCF8574 扩展方案
-
-| 外设 | 连接到 |
-| --- | --- |
-| PCF8574 VCC | ESP32-CAM 3V3 |
-| PCF8574 GND | 公共 GND |
-| PCF8574 SDA | ESP32-CAM GPIO16 |
-| PCF8574 SCL | ESP32-CAM 空闲 GPIO |
-| L298N ENA | ESP32-CAM GPIO12 |
-| L298N ENB | ESP32-CAM GPIO14 |
-| L298N IN1 | PCF8574 P0 |
-| L298N IN2 | PCF8574 P1 |
-| L298N IN3 | PCF8574 P2 |
-| L298N IN4 | PCF8574 P3 |
-| SG90 Pan 信号 | ESP32-CAM GPIO13 |
-| SG90 Tilt 信号 | ESP32-CAM GPIO15 |
-| I2S 麦克风 | ESP32 原生 GPIO，不接 PCF8574 |
-| I2S 功放 | ESP32 原生 GPIO，不接 PCF8574 |
+| 电源开关输出 | TB6612FNG VM、LM2596 IN+ |
+| 电池 - | TB6612FNG GND、LM2596 IN- |
+| LM2596 OUT+ | ESP32-S3-CAM 5V、两个 SG90 红线、MAX98357A VIN |
+| LM2596 OUT- | ESP32-S3-CAM GND、TB6612FNG GND、两个 SG90 GND、INMP441 GND、MAX98357A GND |
+| TB6612FNG VCC | ESP32-S3-CAM 3V3 |
+| TB6612FNG STBY | ESP32-S3-CAM 3V3 |
+| TB6612FNG PWMA | GPIO1 |
+| TB6612FNG AIN1 | GPIO3 |
+| TB6612FNG AIN2 | GPIO14 |
+| TB6612FNG PWMB | GPIO21 |
+| TB6612FNG BIN1 | GPIO41 |
+| TB6612FNG BIN2 | GPIO42 |
+| 左电机 | TB6612FNG AO1 / AO2 |
+| 右电机 | TB6612FNG BO1 / BO2 |
+| SG90 Pan 信号 | GPIO45 |
+| SG90 Tilt 信号 | GPIO47 |
+| INMP441 SCK / BCLK | GPIO43 |
+| INMP441 WS / LRCL | GPIO44 |
+| INMP441 SD / DOUT | GPIO48 |
+| MAX98357A BCLK | GPIO43 |
+| MAX98357A LRC / WS | GPIO44 |
+| MAX98357A DIN | GPIO2 |
+| MAX98357A SD / EN | 3V3 |
+| 喇叭 | MAX98357A + / - |
 
